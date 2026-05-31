@@ -1,6 +1,6 @@
 # EEG Vital Dashboard
 
-Dashboard local en HTML, CSS, JavaScript y Python para explorar registros intraoperatorios desde archivos `.vital`. Esta herramienta no envia datos a servidores externos; el archivo se procesa en tu computador mediante un servidor local.
+Dashboard en HTML, CSS, JavaScript y Python para explorar registros intraoperatorios desde archivos `.vital`. En uso local, el archivo se procesa en tu computador. En la pagina publica, el archivo `.vital` debe enviarse a un backend Python desplegado por el operador.
 
 ## Archivos
 
@@ -10,6 +10,7 @@ Dashboard local en HTML, CSS, JavaScript y Python para explorar registros intrao
 - `server.py`: servidor local para subir `.vital` y convertirlo automaticamente.
 - `vital_to_json.py`: conversor reutilizable desde `.vital` a JSON compatible.
 - `requirements.txt`: dependencias Python.
+- `render.yaml`: configuracion para publicar el backend Python en Render.
 
 ## Uso directo con .vital
 
@@ -37,7 +38,26 @@ En Windows tambien puedes usar doble clic en `start_dashboard.bat`; instala depe
 
 La interfaz usa un layout responsive para notebook, escritorio, monitores anchos y pantallas con menor altura. Los graficos ajustan su altura con el viewport y los paneles pasan a una columna cuando el ancho no alcanza.
 
-Puedes publicar el dashboard en GitHub Pages. Revisa `GITHUB_PAGES.md`. En GitHub Pages la carga de JSON funciona directo; para cargar `.vital` necesitas mantener corriendo `python server.py` en el PC del operador, porque la conversion usa Python/VitalDB local.
+Puedes publicar el dashboard en GitHub Pages. Revisa `GITHUB_PAGES.md`. En GitHub Pages la carga de JSON funciona directo. Para cargar `.vital` desde la pagina publica necesitas publicar tambien el backend Python.
+
+## Backend Python publico para .vital
+
+La pagina publica no puede ejecutar Python por si sola. Para convertir `.vital` desde internet, publica este mismo repositorio como servicio web Python, por ejemplo en Render:
+
+1. En Render crea un `Blueprint` o `Web Service` conectado a este repositorio.
+2. Usa `render.yaml` o configura:
+   - Build command: `pip install -r requirements.txt`
+   - Start command: `gunicorn server:app --timeout 300 --workers 1`
+3. Nombra el servicio `eeg-vital-dashboard-api`.
+4. Cuando Render entregue la URL, pegala en el campo `Servidor Python` del dashboard publico y presiona `Guardar servidor`.
+
+Si el servicio se llama `eeg-vital-dashboard-api`, la URL esperada suele ser:
+
+```text
+https://eeg-vital-dashboard-api.onrender.com
+```
+
+El navegador enviara el `.vital` a `/api/convert-vital`, Python lo convertira y el dashboard mostrara los datos.
 
 ## DSA y paleta Conox
 

@@ -194,6 +194,10 @@ h2 {
   flex: 0 1 150px;
 }
 
+.backend-control {
+  flex-basis: 300px;
+}
+
 .control-group label {
   color: var(--muted);
   font-size: 12px;
@@ -216,6 +220,10 @@ select {
   color: var(--text);
   min-height: 40px;
   padding: 0 12px;
+}
+
+.backend-control input {
+  width: 100%;
 }
 
 .signal-toggle {

@@ -1,4 +1,5 @@
 flask
+gunicorn
 vitaldb
 numpy
 pandas
