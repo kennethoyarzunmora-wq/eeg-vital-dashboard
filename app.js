@@ -1,5 +1,6 @@
 const state = {
   data: null,
+  compactClinicalView: true,
   visibleSignals: new Set(["qCON", "qNOX", "BSR", "EMG", "SQI"]),
   events: [],
   currentRange: null,
@@ -29,6 +30,16 @@ const colors = {
   Alpha: "#67e8a5",
   Beta: "#facc15",
   Gamma: "#fb7185",
+};
+
+const clinicalSignals = ["qCON", "qNOX", "BSR", "EMG", "SQI"];
+const clinicalDomains = {
+  dsa: [0.525, 1],
+  qCON: [0.42, 0.52],
+  qNOX: [0.315, 0.415],
+  BSR: [0.21, 0.31],
+  EMG: [0.105, 0.205],
+  SQI: [0, 0.1],
 };
 
 const dsaColorScale = [
@@ -368,13 +379,31 @@ function renderDsa() {
   const sourceLabel = state.data.metadata.dsa_source === "native" ? "DSA nativo" : "DSA reconstruido desde EEG";
   elements.dsaStatus.textContent = `${sourceLabel} · ${dsa.frequencies[0]}-${dsa.frequencies.at(-1)} Hz`;
   const shapes = state.dsa.clean ? [] : buildShapes();
-  const annotations = state.dsa.clean ? [] : buildAnnotations();
+  const annotations = state.dsa.clean ? [] : buildAnnotations(state.compactClinicalView ? 0.995 : 1.02);
   const dsaMatrix = transposeIfNeeded(dsa.power, dsa.frequencies.length);
   const zRange = robustColorRange(dsaMatrix);
   const zmin = Number.isFinite(state.dsa.min) ? state.dsa.min : zRange.min;
   const zmax = Number.isFinite(state.dsa.max) && state.dsa.max > zmin ? state.dsa.max : zRange.max;
   const sefSeries = computeSef(dsa.frequencies, dsaMatrix, 0.95);
   const customData = dsaMatrix.map(() => sefSeries);
+  const indexX = state.data.indices.time.length ? state.data.indices.time : state.data.time;
+  const clinicalTraces = clinicalSignals
+    .map((key, index) => ({ key, axisNumber: index + 2 }))
+    .filter(({ key }) => state.visibleSignals.has(key) && state.data.indices[key]?.length)
+    .map(({ key, axisNumber }) => {
+      return {
+        type: "scatter",
+        mode: "lines",
+        name: key,
+        x: indexX,
+        y: state.data.indices[key],
+        xaxis: `x${axisNumber}`,
+        yaxis: `y${axisNumber}`,
+        line: { color: colors[key], width: 1.6 },
+        hovertemplate: `<b>${key}</b><br>%{x:.1f} min<br>%{y:.1f}<extra></extra>`,
+        hoverlabel: { bgcolor: "#ffffff", font: { color: "#000000", size: 13 } },
+      };
+    });
 
   Plotly.react(
     "dsaChart",
@@ -388,14 +417,25 @@ function renderDsa() {
         colorscale: dsaPalettes[state.dsa.palette] || dsaPalettes.conoxLite,
         zmin,
         zmax,
-        colorbar: { title: "SEF", tickfont: { color: "#91a2b8" }, titlefont: { color: "#edf4ff" } },
+        colorbar: {
+          title: "SEF",
+          len: state.compactClinicalView ? 0.45 : 1,
+          y: state.compactClinicalView ? 0.762 : 0.5,
+          yanchor: "middle",
+          thickness: 10,
+          tickfont: { color: "#91a2b8", size: 9 },
+          titlefont: { color: "#edf4ff", size: 10 },
+        },
         hoverlabel: { bgcolor: "#ffffff", font: { color: "#000000", size: 13 } },
         hovertemplate:
           "<b>Tiempo</b> %{x:.1f} min<br><b>Frecuencia</b> %{y:.1f} Hz<br><b>SEF95</b> %{customdata:.1f} Hz<br><b>SEF</b> %{z:.2f}<extra></extra>",
         zsmooth: "best",
       },
+      ...clinicalTraces,
     ],
-    plotLayout("Tiempo quirurgico (min)", "Frecuencia (Hz)", { shapes, annotations }),
+    state.compactClinicalView
+      ? clinicalMonitorLayout({ shapes, annotations })
+      : plotLayout("Tiempo quirurgico (min)", "Frecuencia (Hz)", { shapes, annotations }),
     plotConfig(),
   );
 
@@ -431,6 +471,10 @@ function robustColorRange(matrix) {
 }
 
 function renderBands() {
+  if (state.compactClinicalView) {
+    Plotly.purge("bandsChart");
+    return;
+  }
   if (!state.data) {
     Plotly.purge("bandsChart");
     return;
@@ -452,6 +496,10 @@ function renderBands() {
 }
 
 function renderIndices() {
+  if (state.compactClinicalView) {
+    Plotly.purge("indicesChart");
+    return;
+  }
   if (!state.data) {
     Plotly.purge("indicesChart");
     return;
@@ -506,6 +554,70 @@ function plotLayout(xTitle, yTitle, extra = {}) {
       zerolinecolor: "#253246",
     },
     legend: { orientation: "h", x: 0, y: 1.12 },
+    ...extra,
+  };
+}
+
+function clinicalMonitorLayout(extra = {}) {
+  const range = state.currentRange ? { range: state.currentRange } : {};
+  const compactXAxis = {
+    domain: [0, 1],
+    gridcolor: "#132033",
+    zerolinecolor: "#253246",
+    showticklabels: false,
+    ticks: "",
+    showgrid: false,
+    rangeslider: { visible: false },
+    ...range,
+  };
+  const visibleXAxis = {
+    ...compactXAxis,
+    title: { text: "Tiempo quirurgico (min)", standoff: 2, font: { size: 10 } },
+    showticklabels: true,
+    ticks: "outside",
+    tickfont: { size: 10 },
+    showgrid: true,
+  };
+  const clinicalYAxis = (title, domain, color) => ({
+    domain,
+    title: { text: title, standoff: 4, font: { size: 11, color } },
+    gridcolor: "#132033",
+    zerolinecolor: "#253246",
+    tickfont: { size: 9 },
+    range: [0, 100],
+    fixedrange: false,
+  });
+
+  return {
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "#050b14",
+    margin: { l: 46, r: 44, t: 2, b: 24 },
+    font: { color: "#edf4ff", size: 10 },
+    hoverlabel: {
+      bgcolor: "#ffffff",
+      bordercolor: "#111827",
+      font: { color: "#000000", size: 13 },
+    },
+    hovermode: "x unified",
+    showlegend: false,
+    xaxis: compactXAxis,
+    yaxis: {
+      domain: clinicalDomains.dsa,
+      title: { text: "Hz", standoff: 4, font: { size: 11 } },
+      gridcolor: "#132033",
+      zerolinecolor: "#253246",
+      tickfont: { size: 9 },
+    },
+    xaxis2: { ...compactXAxis, matches: "x" },
+    yaxis2: clinicalYAxis("qCON", clinicalDomains.qCON, colors.qCON),
+    xaxis3: { ...compactXAxis, matches: "x" },
+    yaxis3: clinicalYAxis("qNOX", clinicalDomains.qNOX, colors.qNOX),
+    xaxis4: { ...compactXAxis, matches: "x" },
+    yaxis4: clinicalYAxis("BSR", clinicalDomains.BSR, colors.BSR),
+    xaxis5: { ...compactXAxis, matches: "x" },
+    yaxis5: clinicalYAxis("EMG", clinicalDomains.EMG, colors.EMG),
+    xaxis6: { ...visibleXAxis, matches: "x" },
+    yaxis6: clinicalYAxis("SQI", clinicalDomains.SQI, colors.SQI),
     ...extra,
   };
 }
@@ -977,14 +1089,33 @@ function escapeHtml(value) {
 
 function syncRelayout(chartId) {
   const chart = document.getElementById(chartId);
+  if (!chart || chart.dataset.syncRelayoutAttached === "true") return;
+  chart.dataset.syncRelayoutAttached = "true";
   chart.on("plotly_relayout", (event) => {
-    const start = event["xaxis.range[0]"];
-    const end = event["xaxis.range[1]"];
+    const axisName = Object.keys(event)
+      .find((key) => /^xaxis\d*\.range\[0\]$/.test(key))
+      ?.replace(".range[0]", "");
+    const start = axisName ? event[`${axisName}.range[0]`] : undefined;
+    const end = axisName ? event[`${axisName}.range[1]`] : undefined;
     if (start !== undefined && end !== undefined) {
       state.currentRange = [Number(start), Number(end)];
+      const rangeUpdate = state.compactClinicalView
+        ? {
+            "xaxis.range": state.currentRange,
+            "xaxis2.range": state.currentRange,
+            "xaxis3.range": state.currentRange,
+            "xaxis4.range": state.currentRange,
+            "xaxis5.range": state.currentRange,
+            "xaxis6.range": state.currentRange,
+          }
+        : { "xaxis.range": state.currentRange };
       ["dsaChart", "bandsChart", "indicesChart"].forEach((id) => {
-        if (id !== chartId) Plotly.relayout(id, { "xaxis.range": state.currentRange });
+        const target = document.getElementById(id);
+        if (id !== chartId && target?._fullLayout) Plotly.relayout(id, rangeUpdate);
       });
+    }
+    if (event["xaxis.autorange"] || event["xaxis6.autorange"]) {
+      state.currentRange = null;
     }
   });
 }

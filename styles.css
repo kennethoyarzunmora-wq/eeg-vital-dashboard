@@ -27,12 +27,14 @@ html {
 
 body {
   margin: 0;
-  min-height: 100vh;
+  height: 100vh;
   background:
     radial-gradient(circle at top left, rgba(36, 210, 255, 0.14), transparent 32rem),
     linear-gradient(135deg, #070a0f 0%, #111827 55%, #090c12 100%);
   color: var(--text);
-  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 button,
@@ -48,8 +50,8 @@ button,
   background: #172233;
   color: var(--text);
   cursor: pointer;
-  min-height: 40px;
-  padding: 0 14px;
+  min-height: 30px;
+  padding: 0 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -72,14 +74,13 @@ button:hover,
 }
 
 .topbar {
-  position: sticky;
-  top: 0;
   z-index: 10;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  padding: 20px clamp(16px, 3vw, 36px);
+  flex: 0 0 auto;
+  padding: 8px clamp(12px, 2vw, 24px);
   border-bottom: 1px solid var(--line);
   background: rgba(7, 10, 15, 0.88);
   backdrop-filter: blur(16px);
@@ -90,7 +91,7 @@ button:hover,
 }
 
 .eyebrow {
-  margin: 0 0 4px;
+  margin: 0 0 2px;
   color: var(--cyan);
   font-size: 12px;
   letter-spacing: 0.08em;
@@ -104,7 +105,7 @@ h2 {
 }
 
 h1 {
-  font-size: clamp(24px, 3vw, 38px);
+  font-size: clamp(20px, 2.2vw, 30px);
 }
 
 .title-credit {
@@ -129,8 +130,11 @@ h2 {
 .layout {
   display: grid;
   grid-template-columns: minmax(680px, 1fr) minmax(320px, 380px);
-  gap: clamp(12px, 1.5vw, 22px);
-  padding: clamp(12px, 1.5vw, 22px) clamp(14px, 2.4vw, 36px) 32px;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 4px;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 4px 6px 6px;
   width: 100%;
 }
 
@@ -156,15 +160,15 @@ h2 {
 
 .metric {
   min-width: 0;
-  padding: 14px;
+  padding: 6px 8px;
   background: var(--panel);
 }
 
 .metric span {
   display: block;
-  margin-bottom: 6px;
+  margin-bottom: 2px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 10px;
 }
 
 .metric strong {
@@ -172,12 +176,12 @@ h2 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 15px;
+  font-size: 12px;
 }
 
 .message {
   grid-column: 1 / -1;
-  padding: 14px 16px;
+  padding: 6px 10px;
   border-left: 4px solid var(--amber);
   color: #ffe3a3;
 }
@@ -191,14 +195,14 @@ h2 {
   display: flex;
   align-items: end;
   flex-wrap: wrap;
-  gap: 14px;
-  padding: 14px;
+  gap: 6px;
+  padding: 6px;
 }
 
 .control-group {
   display: grid;
-  gap: 6px;
-  flex: 0 1 150px;
+  gap: 2px;
+  flex: 0 1 128px;
 }
 
 .backend-control {
@@ -207,26 +211,26 @@ h2 {
 
 .control-group label {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 10px;
 }
 
 .inline-check {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 40px;
+  min-height: 30px;
   color: var(--muted);
 }
 
 input,
 select {
-  width: 150px;
+  width: 128px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #0b111b;
   color: var(--text);
-  min-height: 40px;
-  padding: 0 12px;
+  min-height: 30px;
+  padding: 0 8px;
 }
 
 .backend-control input {
@@ -236,7 +240,7 @@ select {
 .signal-toggle {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px;
   margin-left: auto;
   color: var(--muted);
   min-width: min(100%, 360px);
@@ -250,21 +254,33 @@ select {
 
 .charts {
   display: grid;
-  gap: 4px;
+  grid-column: 1 / 2;
+  grid-row: 4;
+  gap: 0;
+  height: 100%;
   min-width: 0;
+  min-height: 0;
 }
 
 .chart-shell {
   min-width: 0;
-  padding: 8px 10px;
+  padding: 0;
   overflow: hidden;
+}
+
+.clinical-monitor-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
 }
 
 .chart-title {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 6px;
+  min-height: 18px;
+  margin-bottom: 0;
+  padding: 1px 6px;
   color: var(--muted);
 }
 
@@ -278,18 +294,32 @@ select {
 }
 
 .dsa-chart {
-  height: clamp(340px, 44vh, 620px);
+  height: clamp(520px, calc(100vh - 172px), 860px);
+}
+
+.clinical-monitor-chart {
+  height: 100%;
+  min-height: 0;
+}
+
+.compact-hidden {
+  display: none;
 }
 
 .side-panel {
+  grid-column: 2;
+  grid-row: 4;
   display: grid;
   align-content: start;
-  gap: clamp(10px, 1.2vw, 18px);
+  gap: 4px;
   min-width: 0;
+  min-height: 0;
+  max-height: 100%;
+  overflow: auto;
 }
 
 .side-panel section {
-  padding: 16px;
+  padding: 8px;
 }
 
 .event-form {
@@ -415,10 +445,11 @@ select {
 
 .dashboard-signature {
   color: rgba(15, 23, 42, 0.68);
-  font-size: 0.85rem;
+  flex: 0 0 auto;
+  font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0;
-  padding: 0 18px 18px;
+  padding: 0 8px 2px;
   text-align: right;
 }
 
@@ -437,12 +468,25 @@ select {
 }
 
 @media (max-width: 1100px) {
+  body {
+    height: auto;
+    min-height: 100vh;
+    overflow: auto;
+  }
+
   .layout {
     grid-template-columns: 1fr;
+    grid-template-rows: auto;
   }
 
   .actions {
     max-width: none;
+  }
+
+  .charts,
+  .side-panel {
+    grid-column: 1;
+    grid-row: auto;
   }
 }
 
@@ -452,11 +496,17 @@ select {
   }
 
   .chart-shell {
-    padding: 10px 12px;
+    padding: 0;
   }
 }
 
 @media (max-width: 720px) {
+  body {
+    height: auto;
+    min-height: 100vh;
+    overflow: auto;
+  }
+
   .topbar {
     align-items: stretch;
     flex-direction: column;
@@ -493,7 +543,7 @@ select {
   }
 
   .dsa-chart {
-    height: 360px;
+    height: 560px;
   }
 
   .dashboard-signature {
