@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EEG Vital Dashboard</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Visualizacion intraoperatoria</p>
+        <h1>EEG Vital Dashboard</h1>
+      </div>
+      <div class="actions">
+        <label class="file-button">
+          <input id="fileInput" type="file" accept=".json,.vital,application/json" />
+          Cargar archivo
+        </label>
+        <button id="resetZoomButton" type="button">Reset zoom</button>
+        <button id="clearButton" type="button">Limpiar datos</button>
+        <button id="exportButton" type="button">Exportar datos</button>
+        <button id="printButton" type="button">Imprimir</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="summary-grid" aria-label="Resumen del archivo">
+        <div class="metric">
+          <span>Archivo</span>
+          <strong id="fileName">Sin archivo</strong>
+        </div>
+        <div class="metric">
+          <span>Registro total</span>
+          <strong id="duration">--</strong>
+        </div>
+        <div class="metric">
+          <span>Inicio</span>
+          <strong id="startTime">--</strong>
+        </div>
+        <div class="metric">
+          <span>Termino</span>
+          <strong id="endTime">--</strong>
+        </div>
+        <div class="metric">
+          <span>Muestreo</span>
+          <strong id="samplingRate">--</strong>
+        </div>
+        <div class="metric">
+          <span>Dispositivo</span>
+          <strong id="device">--</strong>
+        </div>
+      </section>
+
+      <section id="message" class="message hidden" role="status"></section>
+
+      <section class="control-panel" aria-label="Controles del dashboard">
+        <div class="control-group">
+          <label for="rangeStart">Ventana inicio (min)</label>
+          <input id="rangeStart" type="number" min="0" step="1" value="0" />
+        </div>
+        <div class="control-group">
+          <label for="rangeEnd">Ventana fin (min)</label>
+          <input id="rangeEnd" type="number" min="1" step="1" value="60" />
+        </div>
+        <button id="applyRangeButton" type="button">Aplicar ventana</button>
+        <div class="control-group">
+          <label for="paletteSelect">Paleta DSA</label>
+          <select id="paletteSelect">
+            <option value="conoxLite">Conox Lite</option>
+            <option value="conoxHigh">Conox alta</option>
+            <option value="thermal">Termica</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <label for="powerMin">SEF min</label>
+          <input id="powerMin" type="number" min="0" max="1" step="0.01" value="0.62" />
+        </div>
+        <div class="control-group">
+          <label for="powerMax">SEF max</label>
+          <input id="powerMax" type="number" min="0" max="1" step="0.01" value="0.85" />
+        </div>
+        <button id="applyDsaButton" type="button">Actualizar DSA</button>
+        <label class="inline-check"><input id="cleanDsaToggle" type="checkbox" /> DSA limpio</label>
+        <div class="signal-toggle">
+          <label><input type="checkbox" data-signal="qCON" checked /> qCON</label>
+          <label><input type="checkbox" data-signal="qNOX" checked /> qNOX</label>
+          <label><input type="checkbox" data-signal="BSR" checked /> BSR</label>
+          <label><input type="checkbox" data-signal="EMG" checked /> EMG</label>
+          <label><input type="checkbox" data-signal="SQI" checked /> SQI</label>
+        </div>
+      </section>
+
+      <section class="charts">
+        <div class="chart-shell">
+          <div class="chart-title">
+            <h2>Density Spectral Array</h2>
+            <span id="dsaStatus">Esperando datos</span>
+          </div>
+          <div id="dsaChart" class="chart dsa-chart"></div>
+        </div>
+
+        <div class="chart-shell">
+          <div class="chart-title">
+            <h2>Bandas EEG</h2>
+            <span>Delta, Theta, Alpha, Beta, Gamma</span>
+          </div>
+          <div id="bandsChart" class="chart"></div>
+        </div>
+
+        <div class="chart-shell">
+          <div class="chart-title">
+            <h2>Indices clinicos</h2>
+            <span>Sincronizados con tiempo quirurgico</span>
+          </div>
+          <div id="indicesChart" class="chart"></div>
+        </div>
+      </section>
+
+      <aside class="side-panel">
+        <section>
+          <h2>Paciente y modelo</h2>
+          <div class="patient-form">
+            <label>
+              Edad
+              <input id="patientAge" type="number" min="0" max="120" placeholder="anos" />
+            </label>
+            <label>
+              Genero
+              <select id="patientGender">
+                <option value="">Sin dato</option>
+                <option>Femenino</option>
+                <option>Masculino</option>
+                <option>Otro</option>
+              </select>
+            </label>
+            <label>
+              Talla
+              <input id="patientHeight" type="number" min="30" max="250" step="1" placeholder="cm" />
+            </label>
+            <label>
+              Peso
+              <input id="patientWeight" type="number" min="1" max="350" step="0.1" placeholder="kg" />
+            </label>
+            <label class="full">
+              Modelo PK-PD
+              <select id="pkpdModel">
+                <option value="">Sin especificar</option>
+                <option>Marsh propofol</option>
+                <option>Schnider propofol</option>
+                <option>Eleveld propofol/remifentanilo</option>
+                <option>Minto remifentanilo</option>
+                <option>Otro</option>
+              </select>
+            </label>
+            <button id="savePatientButton" type="button">Actualizar datos</button>
+          </div>
+          <div id="patientSummary" class="patient-summary">Sin datos clinicos ingresados.</div>
+        </section>
+
+        <section>
+          <h2>Resumen relevante</h2>
+          <div id="legendSummary" class="legend-summary">Sin eventos relevantes.</div>
+        </section>
+
+        <section>
+          <h2>Marcadores</h2>
+          <div class="event-form">
+            <select id="eventType">
+              <option>induccion</option>
+              <option>intubacion</option>
+              <option>incision</option>
+              <option>mantenimiento</option>
+              <option>despertar</option>
+              <option>extubacion</option>
+            </select>
+            <input id="eventTime" type="number" min="0" step="0.5" placeholder="min" />
+            <button id="addEventButton" type="button">Agregar</button>
+          </div>
+          <ul id="eventList" class="event-list"></ul>
+        </section>
+
+        <section>
+          <h2>Analisis automatico</h2>
+          <div id="analysisList" class="analysis-list"></div>
+        </section>
+      </aside>
+    </main>
+
+    <footer class="dashboard-signature">By Kenneth</footer>
+
+    <script src="app.js"></script>
+  </body>
+</html>
