@@ -1,5 +1,6 @@
 const state = {
   data: null,
+  currentCaseId: null,
   compactClinicalView: true,
   visibleSignals: new Set(["qCON", "qNOX", "BSR", "EMG", "SQI"]),
   events: [],
@@ -110,11 +111,21 @@ const elements = {
   eventList: document.getElementById("eventList"),
   analysisList: document.getElementById("analysisList"),
   patientAge: document.getElementById("patientAge"),
+  patientCode: document.getElementById("patientCode"),
+  procedureDate: document.getElementById("procedureDate"),
+  hospital: document.getElementById("hospital"),
+  surgeryType: document.getElementById("surgeryType"),
+  anesthesiaType: document.getElementById("anesthesiaType"),
   patientGender: document.getElementById("patientGender"),
   patientHeight: document.getElementById("patientHeight"),
   patientWeight: document.getElementById("patientWeight"),
   pkpdModel: document.getElementById("pkpdModel"),
   savePatientButton: document.getElementById("savePatientButton"),
+  saveCaseButton: document.getElementById("saveCaseButton"),
+  saveCommentsButton: document.getElementById("saveCommentsButton"),
+  refreshCasesButton: document.getElementById("refreshCasesButton"),
+  caseComments: document.getElementById("caseComments"),
+  caseList: document.getElementById("caseList"),
   patientSummary: document.getElementById("patientSummary"),
   legendSummary: document.getElementById("legendSummary"),
 };
@@ -134,6 +145,9 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   elements.addEventButton.addEventListener("click", addManualEvent);
   elements.savePatientButton.addEventListener("click", savePatientData);
+  elements.saveCaseButton.addEventListener("click", saveCurrentCase);
+  elements.saveCommentsButton.addEventListener("click", saveCaseComments);
+  elements.refreshCasesButton.addEventListener("click", loadCaseList);
 
   document.querySelectorAll("[data-signal]").forEach((input) => {
     input.addEventListener("change", (event) => {
@@ -145,11 +159,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
   clearDashboard({ silent: true });
   elements.backendUrl.value = getApiBase();
+  loadCaseList();
 });
 
 async function handleFileUpload(event) {
   const file = event.target.files?.[0];
   if (!file) return;
+
+  if (isLocalDashboard && /\.(vital|json|csv)$/i.test(file.name)) {
+    updateFileName(file.name);
+    await importAndSaveCase(file);
+    return;
+  }
 
   if (file.name.toLowerCase().endsWith(".vital")) {
     updateFileName(file.name);
@@ -197,6 +218,47 @@ async function uploadVitalFile(file) {
   }
 }
 
+async function importAndSaveCase(file) {
+  const apiBase = getApiBase();
+  showMessage(`Importando y guardando caso local (${file.name}).`);
+  setLoading(true);
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("metadata", JSON.stringify(getCaseMetadata()));
+  formData.append("fs", "128");
+  formData.append("interval", "1");
+
+  try {
+    const response = await fetch(`${apiBase}/api/import-case`, {
+      method: "POST",
+      body: formData,
+    });
+    const record = await response.json();
+    if (!response.ok) throw new Error(record.error || "No se pudo importar el caso.");
+    elements.caseComments.value = record.comments || "";
+    loadDashboard(record.analysis, record.source_file_name || file.name);
+    state.currentCaseId = record.id;
+    await loadCaseList();
+    showMessage("Caso importado, analizado y guardado localmente.");
+  } catch (error) {
+    showMessage(`No se pudo importar el caso local. Detalle: ${error.message}`);
+  } finally {
+    setLoading(false);
+  }
+}
+
+function getCaseMetadata() {
+  return {
+    patient_code: elements.patientCode.value,
+    procedure_date: elements.procedureDate.value,
+    surgery_type: elements.surgeryType.value,
+    hospital: elements.hospital.value,
+    anesthesia_type: elements.anesthesiaType.value,
+    comments: elements.caseComments.value,
+  };
+}
+
 function setLoading(isLoading) {
   elements.fileInput.disabled = isLoading;
   elements.resetZoomButton.disabled = isLoading;
@@ -205,6 +267,8 @@ function setLoading(isLoading) {
   elements.exportButton.disabled = isLoading;
   elements.printButton.disabled = isLoading;
   elements.saveBackendButton.disabled = isLoading;
+  elements.saveCaseButton.disabled = isLoading;
+  elements.saveCommentsButton.disabled = isLoading;
 }
 
 function getApiBase() {
@@ -236,6 +300,7 @@ async function saveBackendUrl() {
 
 function loadDashboard(rawData, fileName) {
   state.data = normalizeData(rawData);
+  state.currentCaseId = null;
   state.events = [...state.data.events];
   state.currentRange = null;
   loadPatientFromMetadata();
@@ -830,6 +895,92 @@ function savePatientData() {
   showMessage("Datos del paciente actualizados. DSA limpio activado para lectura sin superposiciones.");
 }
 
+async function loadCaseList() {
+  if (!isLocalDashboard) {
+    elements.caseList.textContent = "Historial local disponible en la version de escritorio.";
+    return;
+  }
+  try {
+    const response = await fetch(`${getApiBase()}/api/cases`);
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "No se pudo cargar la lista.");
+    renderCaseList(payload.cases || []);
+  } catch (error) {
+    elements.caseList.textContent = `No se pudo leer la base local: ${error.message}`;
+  }
+}
+
+function renderCaseList(cases) {
+  if (!cases.length) {
+    elements.caseList.textContent = "Sin casos guardados.";
+    return;
+  }
+  elements.caseList.innerHTML = "";
+  cases.slice(0, 12).forEach((record) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "case-card";
+    card.innerHTML = `
+      <strong>${escapeHtml(record.patient_code || record.source_file_name || "Caso sin nombre")}</strong>
+      <span>${escapeHtml(record.procedure_date || record.created_at || "")}</span><br />
+      <span>${escapeHtml(record.hospital || "")} ${escapeHtml(record.surgery_type || "")}</span>
+    `;
+    card.addEventListener("click", () => openCase(record.id));
+    elements.caseList.appendChild(card);
+  });
+}
+
+async function openCase(caseId) {
+  try {
+    const response = await fetch(`${getApiBase()}/api/cases/${caseId}`);
+    const record = await response.json();
+    if (!response.ok) throw new Error(record.error || "No se pudo abrir el caso.");
+    fillCaseForm(record);
+    loadDashboard(record.analysis, record.source_file_name);
+    state.currentCaseId = record.id;
+    elements.caseComments.value = record.comments || "";
+    showMessage("Caso cargado desde la base local.");
+  } catch (error) {
+    showMessage(`No se pudo abrir el caso. Detalle: ${error.message}`);
+  }
+}
+
+function fillCaseForm(record) {
+  elements.patientCode.value = record.patient_code || "";
+  elements.procedureDate.value = record.procedure_date || "";
+  elements.hospital.value = record.hospital || "";
+  elements.surgeryType.value = record.surgery_type || "";
+  elements.anesthesiaType.value = record.anesthesia_type || "";
+}
+
+async function saveCurrentCase() {
+  showMessage(
+    state.currentCaseId
+      ? "El caso actual ya esta guardado. Puedes actualizar comentarios."
+      : "Para guardar un caso nuevo, carga el archivo desde Cargar archivo en la version de escritorio.",
+  );
+}
+
+async function saveCaseComments() {
+  if (!state.currentCaseId) {
+    showMessage("Primero abre o importa un caso guardado.");
+    return;
+  }
+  try {
+    const response = await fetch(`${getApiBase()}/api/cases/${state.currentCaseId}/comments`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ comments: elements.caseComments.value }),
+    });
+    const record = await response.json();
+    if (!response.ok) throw new Error(record.error || "No se pudieron guardar comentarios.");
+    await loadCaseList();
+    showMessage("Comentarios guardados en la base local.");
+  } catch (error) {
+    showMessage(`No se pudieron guardar comentarios. Detalle: ${error.message}`);
+  }
+}
+
 function renderPatientSummary() {
   const parts = [];
   const bmi = calculateBmi(state.patient);
@@ -944,8 +1095,15 @@ function clearDashboard(options = {}) {
   state.data = null;
   state.events = [];
   state.currentRange = null;
+  state.currentCaseId = null;
   state.patient = { age: "", gender: "", height: "", weight: "", pkpdModel: "" };
   state.dsa = { palette: "conoxLite", min: 0.62, max: 0.85, clean: true };
+  elements.patientCode.value = "";
+  elements.procedureDate.value = "";
+  elements.hospital.value = "";
+  elements.surgeryType.value = "";
+  elements.anesthesiaType.value = "";
+  elements.caseComments.value = "";
   elements.patientAge.value = "";
   elements.patientGender.value = "";
   elements.patientHeight.value = "";

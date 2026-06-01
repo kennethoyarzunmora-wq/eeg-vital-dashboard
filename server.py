@@ -9,13 +9,16 @@ request.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import tempfile
 from pathlib import Path
 from traceback import format_exc
 
 from flask import Flask, jsonify, request, send_from_directory
+import pandas as pd
 
+from local_store import LocalStore
 from vital_to_json import convert_payload
 
 
@@ -33,6 +36,7 @@ logging.basicConfig(
 
 app = Flask(__name__, static_folder=str(ROOT), static_url_path="")
 app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024 * 1024
+store = LocalStore()
 
 
 @app.after_request
@@ -59,6 +63,35 @@ def read_log():
     if not LOG_PATH.exists():
         return jsonify({"log": ""})
     return jsonify({"log": LOG_PATH.read_text(encoding="utf-8")[-12000:]})
+
+
+@app.get("/api/cases")
+def list_cases():
+    return jsonify({"cases": store.list_cases()})
+
+
+@app.get("/api/cases/<case_id>")
+def get_case(case_id):
+    record = store.get_case(case_id)
+    if record is None:
+        return jsonify({"error": "Caso no encontrado."}), 404
+    return jsonify(record)
+
+
+@app.patch("/api/cases/<case_id>/comments")
+def update_case_comments(case_id):
+    payload = request.get_json(silent=True) or {}
+    record = store.update_comments(case_id, str(payload.get("comments", "")))
+    if record is None:
+        return jsonify({"error": "Caso no encontrado."}), 404
+    return jsonify(record)
+
+
+@app.delete("/api/cases/<case_id>")
+def delete_case(case_id):
+    if not store.delete_case(case_id):
+        return jsonify({"error": "Caso no encontrado."}), 404
+    return jsonify({"ok": True})
 
 
 @app.post("/api/convert-vital")
@@ -90,6 +123,84 @@ def convert_vital():
         )
 
     return jsonify(payload)
+
+
+@app.post("/api/import-case")
+def import_case():
+    uploaded = request.files.get("file")
+    if uploaded is None or uploaded.filename == "":
+        return jsonify({"error": "No se recibio ningun archivo."}), 400
+
+    metadata = parse_case_metadata(request.form.get("metadata"))
+    fs = float(request.form.get("fs", 128))
+    interval = float(request.form.get("interval", 1))
+
+    with tempfile.TemporaryDirectory(prefix="eeg_case_") as temp_dir:
+        input_path = Path(temp_dir) / uploaded.filename
+        uploaded.save(input_path)
+        payload = convert_input_file(input_path, fs=fs, interval=interval)
+        record = store.create_case(source_file=input_path, analysis=payload, metadata=metadata)
+
+    return jsonify(record)
+
+
+def parse_case_metadata(raw_metadata):
+    if not raw_metadata:
+        return {}
+    try:
+        payload = json.loads(raw_metadata)
+        return payload if isinstance(payload, dict) else {}
+    except json.JSONDecodeError:
+        return {}
+
+
+def convert_input_file(path: Path, fs: float = 128, interval: float = 1):
+    suffix = path.suffix.lower()
+    if suffix == ".vital":
+        return convert_payload(path, fs=fs, interval=interval)
+    if suffix == ".json":
+        return json.loads(path.read_text(encoding="utf-8"))
+    if suffix == ".csv":
+        return csv_to_payload(path)
+    raise ValueError("Formato no soportado. Usa .vital, .json o .csv.")
+
+
+def csv_to_payload(path: Path):
+    table = pd.read_csv(path)
+    lower_columns = {str(column).strip().lower(): column for column in table.columns}
+    time_column = lower_columns.get("time") or lower_columns.get("tiempo") or lower_columns.get("minute")
+    if time_column is None:
+        table.insert(0, "time", range(len(table)))
+        time_column = "time"
+
+    def series_for(*names):
+        for name in names:
+            column = lower_columns.get(name.lower())
+            if column is not None:
+                values = pd.to_numeric(table[column], errors="coerce")
+                return [None if pd.isna(value) else float(value) for value in values]
+        return []
+
+    time_values = [float(value) for value in pd.to_numeric(table[time_column], errors="coerce").fillna(0)]
+    return {
+        "metadata": {
+            "patient_id": "anonimized",
+            "device": "CSV",
+            "dsa_source": "csv",
+        },
+        "time": time_values,
+        "eeg": series_for("eeg", "eeg1", "conox/eeg"),
+        "dsa": {"frequencies": [], "times": [], "power": []},
+        "indices": {
+            "time": time_values,
+            "qCON": series_for("qcon", "qCON"),
+            "qNOX": series_for("qnox", "qNOX"),
+            "BSR": series_for("bsr", "BSR"),
+            "EMG": series_for("emg", "EMG"),
+            "SQI": series_for("sqi", "SQI"),
+        },
+        "events": [],
+    }
 
 
 @app.errorhandler(Exception)

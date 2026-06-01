@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>EEG Vital Dashboard By Kenneth</title>
     <link rel="stylesheet" href="styles.css?v=20260531-compact-clinical" />
-    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script src="vendor/plotly-2.35.2.min.js"></script>
   </head>
   <body>
     <header class="topbar">
@@ -128,6 +128,26 @@
           <h2>Paciente y modelo</h2>
           <div class="patient-form">
             <label>
+              Codigo paciente
+              <input id="patientCode" type="text" placeholder="anonimo" />
+            </label>
+            <label>
+              Fecha
+              <input id="procedureDate" type="date" />
+            </label>
+            <label>
+              Hospital/clinica
+              <input id="hospital" type="text" placeholder="centro" />
+            </label>
+            <label>
+              Cirugia
+              <input id="surgeryType" type="text" placeholder="tipo" />
+            </label>
+            <label class="full">
+              Tipo de anestesia
+              <input id="anesthesiaType" type="text" placeholder="general, TIVA, balanceada" />
+            </label>
+            <label>
               Edad
               <input id="patientAge" type="number" min="0" max="120" placeholder="anos" />
             </label>
@@ -160,8 +180,20 @@
               </select>
             </label>
             <button id="savePatientButton" type="button">Actualizar datos</button>
+            <label class="full">
+              Comentarios clinicos
+              <textarea id="caseComments" rows="3" placeholder="comentarios del caso"></textarea>
+            </label>
+            <button id="saveCaseButton" type="button">Guardar caso</button>
+            <button id="saveCommentsButton" type="button">Guardar comentarios</button>
           </div>
           <div id="patientSummary" class="patient-summary">Sin datos clinicos ingresados.</div>
+        </section>
+
+        <section>
+          <h2>Casos guardados</h2>
+          <button id="refreshCasesButton" type="button">Actualizar lista</button>
+          <div id="caseList" class="case-list">Sin casos guardados.</div>
         </section>
 
         <section>

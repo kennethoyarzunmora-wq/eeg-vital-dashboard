@@ -39,7 +39,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -223,7 +224,8 @@ h2 {
 }
 
 input,
-select {
+select,
+textarea {
   width: 128px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -231,6 +233,12 @@ select {
   color: var(--text);
   min-height: 30px;
   padding: 0 8px;
+}
+
+textarea {
+  min-height: 64px;
+  padding: 8px;
+  resize: vertical;
 }
 
 .backend-control input {
@@ -345,6 +353,7 @@ select {
 
 .patient-form input,
 .patient-form select,
+.patient-form textarea,
 .patient-form button {
   width: 100%;
 }
@@ -408,7 +417,8 @@ select {
 }
 
 .event-list,
-.analysis-list {
+.analysis-list,
+.case-list {
   display: grid;
   gap: 10px;
   margin: 14px 0 0;
@@ -417,12 +427,32 @@ select {
 }
 
 .event-list li,
-.analysis-card {
+.analysis-card,
+.case-card {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel-2);
   padding: 10px;
   color: var(--muted);
+}
+
+.case-card {
+  cursor: pointer;
+  display: block;
+  min-height: 0;
+  text-align: left;
+  white-space: normal;
+  width: 100%;
+}
+
+.case-card:hover {
+  border-color: var(--cyan);
+}
+
+.case-card strong {
+  display: block;
+  color: var(--text);
+  margin-bottom: 3px;
 }
 
 .analysis-card strong {
@@ -525,6 +555,7 @@ select {
   .control-group,
   input,
   select,
+  textarea,
   button,
   .file-button {
     width: 100%;
