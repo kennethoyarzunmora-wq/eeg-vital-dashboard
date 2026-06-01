@@ -5,7 +5,7 @@ cd /d "%~dp0"
 python -m pip install --upgrade pip
 python -m pip install -r requirements-desktop.txt
 
-pyinstaller ^
+python -m PyInstaller ^
   --noconfirm ^
   --clean ^
   --windowed ^
@@ -20,6 +20,13 @@ pyinstaller ^
   --hidden-import scipy.signal ^
   --hidden-import pandas ^
   desktop_app.py
+
+if errorlevel 1 (
+  echo.
+  echo ERROR: No se pudo construir el ejecutable.
+  pause
+  exit /b 1
+)
 
 echo.
 echo Build listo:
