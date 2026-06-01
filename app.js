@@ -83,8 +83,7 @@ const dsaPalettes = {
 };
 
 const isLocalDashboard = ["127.0.0.1", "localhost"].includes(window.location.hostname);
-const defaultRemoteApiBase = "https://eeg-vital-dashboard-api.onrender.com";
-const apiStorageKey = "eegVitalDashboardApiBase";
+const defaultRemoteApiBase = atob("aHR0cHM6Ly9lZWctdml0YWwtZGFzaGJvYXJkLWFwaS5vbnJlbmRlci5jb20=");
 const defaultApiBase = isLocalDashboard ? window.location.origin : defaultRemoteApiBase;
 
 const elements = {
@@ -99,8 +98,6 @@ const elements = {
   powerMin: document.getElementById("powerMin"),
   powerMax: document.getElementById("powerMax"),
   cleanDsaToggle: document.getElementById("cleanDsaToggle"),
-  backendUrl: document.getElementById("backendUrl"),
-  saveBackendButton: document.getElementById("saveBackendButton"),
   rangeStart: document.getElementById("rangeStart"),
   rangeEnd: document.getElementById("rangeEnd"),
   message: document.getElementById("message"),
@@ -145,7 +142,6 @@ document.addEventListener("DOMContentLoaded", () => {
   elements.printButton.addEventListener("click", printDashboard);
   elements.applyRangeButton.addEventListener("click", applyManualRange);
   elements.applyDsaButton.addEventListener("click", applyDsaSettings);
-  elements.saveBackendButton.addEventListener("click", saveBackendUrl);
   elements.cleanDsaToggle.addEventListener("change", () => {
     state.dsa.clean = elements.cleanDsaToggle.checked;
     renderDsa();
@@ -165,7 +161,6 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   clearDashboard({ silent: true });
-  elements.backendUrl.value = getApiBase();
   loadCaseList();
 });
 
@@ -196,7 +191,7 @@ async function handleFileUpload(event) {
 
 async function uploadVitalFile(file) {
   const apiBase = getApiBase();
-  showMessage(`Procesando archivo .vital en Python (${apiBase}). Esto puede tardar algunos minutos segun el tamano del registro.`);
+  showMessage("Procesando archivo .vital en Python. Esto puede tardar algunos minutos segun el tamano del registro.");
   setLoading(true);
 
   const formData = new FormData();
@@ -218,7 +213,7 @@ async function uploadVitalFile(file) {
     showMessage("Archivo .vital convertido y cargado correctamente.");
   } catch (error) {
     showMessage(
-      `No se pudo procesar el .vital. Revisa que el servidor Python este activo y que la URL configurada sea correcta. Detalle: ${error.message}`,
+      `No se pudo procesar el .vital. Revisa que el servidor Python este activo. Detalle: ${error.message}`,
     );
   } finally {
     setLoading(false);
@@ -271,36 +266,16 @@ function setLoading(isLoading) {
   elements.clearButton.disabled = isLoading;
   elements.exportButton.disabled = isLoading;
   elements.printButton.disabled = isLoading;
-  elements.saveBackendButton.disabled = isLoading;
   elements.saveCaseButton.disabled = isLoading;
   elements.saveCommentsButton.disabled = isLoading;
 }
 
 function getApiBase() {
-  return sanitizeApiBase(localStorage.getItem(apiStorageKey) || defaultApiBase);
+  return sanitizeApiBase(defaultApiBase);
 }
 
 function sanitizeApiBase(value) {
   return String(value || "").trim().replace(/\/+$/, "");
-}
-
-async function saveBackendUrl() {
-  const apiBase = sanitizeApiBase(elements.backendUrl.value);
-  if (!apiBase) {
-    showMessage("Ingresa la URL del servidor Python.");
-    return;
-  }
-
-  localStorage.setItem(apiStorageKey, apiBase);
-  elements.backendUrl.value = apiBase;
-
-  try {
-    const response = await fetch(`${apiBase}/api/health`, { method: "GET" });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    showMessage("Servidor Python conectado correctamente.");
-  } catch (error) {
-    showMessage(`URL guardada, pero no se pudo confirmar conexion con Python. Detalle: ${error.message}`);
-  }
 }
 
 function loadDashboard(rawData, fileName) {
