@@ -1,6 +1,8 @@
 const state = {
   data: null,
   currentCaseId: null,
+  currentDatabaseCaseId: null,
+  savedDatabaseCases: [],
   compactClinicalView: true,
   visibleSignals: new Set(["qCON", "qNOX", "BSR", "EMG", "SQI"]),
   events: [],
@@ -85,6 +87,9 @@ const dsaPalettes = {
 const isLocalDashboard = ["127.0.0.1", "localhost"].includes(window.location.hostname);
 const defaultRemoteApiBase = atob("aHR0cHM6Ly9lZWctdml0YWwtZGFzaGJvYXJkLWFwaS5vbnJlbmRlci5jb20=");
 const defaultApiBase = isLocalDashboard ? window.location.origin : defaultRemoteApiBase;
+const databaseName = "eeg_vital_clinical_database";
+const databaseVersion = 1;
+const databaseStoreName = "cases";
 
 const elements = {
   fileInput: document.getElementById("fileInput"),
@@ -92,6 +97,7 @@ const elements = {
   clearButton: document.getElementById("clearButton"),
   exportButton: document.getElementById("exportButton"),
   printButton: document.getElementById("printButton"),
+  exportDatabaseButton: document.getElementById("exportDatabaseButton"),
   applyRangeButton: document.getElementById("applyRangeButton"),
   applyDsaButton: document.getElementById("applyDsaButton"),
   paletteSelect: document.getElementById("paletteSelect"),
@@ -104,6 +110,7 @@ const elements = {
   dsaStatus: document.getElementById("dsaStatus"),
   eventType: document.getElementById("eventType"),
   eventTime: document.getElementById("eventTime"),
+  eventDescription: document.getElementById("eventDescription"),
   addEventButton: document.getElementById("addEventButton"),
   eventList: document.getElementById("eventList"),
   analysisList: document.getElementById("analysisList"),
@@ -111,6 +118,7 @@ const elements = {
   patientCode: document.getElementById("patientCode"),
   procedureDate: document.getElementById("procedureDate"),
   hospital: document.getElementById("hospital"),
+  operatingRoom: document.getElementById("operatingRoom"),
   surgeryType: document.getElementById("surgeryType"),
   anesthesiaType: document.getElementById("anesthesiaType"),
   patientGender: document.getElementById("patientGender"),
@@ -123,6 +131,12 @@ const elements = {
   refreshCasesButton: document.getElementById("refreshCasesButton"),
   caseComments: document.getElementById("caseComments"),
   caseList: document.getElementById("caseList"),
+  databaseSearch: document.getElementById("databaseSearch"),
+  refreshDatabaseButton: document.getElementById("refreshDatabaseButton"),
+  exportAllCasesButton: document.getElementById("exportAllCasesButton"),
+  exportOneCaseButton: document.getElementById("exportOneCaseButton"),
+  deleteDatabaseCaseButton: document.getElementById("deleteDatabaseCaseButton"),
+  databaseCaseList: document.getElementById("databaseCaseList"),
   patientSummary: document.getElementById("patientSummary"),
   legendSummary: document.getElementById("legendSummary"),
 };
@@ -140,6 +154,7 @@ document.addEventListener("DOMContentLoaded", () => {
   elements.clearButton.addEventListener("click", clearDashboard);
   elements.exportButton.addEventListener("click", exportDashboardData);
   elements.printButton.addEventListener("click", printDashboard);
+  elements.exportDatabaseButton.addEventListener("click", exportDatabaseToExcel);
   elements.applyRangeButton.addEventListener("click", applyManualRange);
   elements.applyDsaButton.addEventListener("click", applyDsaSettings);
   elements.cleanDsaToggle.addEventListener("change", () => {
@@ -151,6 +166,11 @@ document.addEventListener("DOMContentLoaded", () => {
   elements.saveCaseButton.addEventListener("click", saveCurrentCase);
   elements.saveCommentsButton.addEventListener("click", saveCaseComments);
   elements.refreshCasesButton.addEventListener("click", loadCaseList);
+  elements.databaseSearch.addEventListener("input", renderDatabaseCaseList);
+  elements.refreshDatabaseButton.addEventListener("click", loadSavedCases);
+  elements.exportAllCasesButton.addEventListener("click", exportDatabaseToExcel);
+  elements.exportOneCaseButton.addEventListener("click", exportCurrentDatabaseCaseToExcel);
+  elements.deleteDatabaseCaseButton.addEventListener("click", deleteCurrentDatabaseCase);
 
   document.querySelectorAll("[data-signal]").forEach((input) => {
     input.addEventListener("change", (event) => {
@@ -162,6 +182,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   clearDashboard({ silent: true });
   loadCaseList();
+  loadSavedCases();
 });
 
 async function handleFileUpload(event) {
@@ -238,7 +259,7 @@ async function importAndSaveCase(file) {
     });
     const record = await response.json();
     if (!response.ok) throw new Error(record.error || "No se pudo importar el caso.");
-    await openCase(record.id, { silent: true });
+    await openCase(record.id, { silent: true, saveToDatabase: true });
     await loadCaseList();
     showMessage("Caso importado, analizado y guardado localmente.");
   } catch (error) {
@@ -254,6 +275,7 @@ function getCaseMetadata() {
     procedure_date: elements.procedureDate.value,
     surgery_type: elements.surgeryType.value,
     hospital: elements.hospital.value,
+    operating_room: elements.operatingRoom.value,
     anesthesia_type: elements.anesthesiaType.value,
     comments: elements.caseComments.value,
   };
@@ -265,6 +287,7 @@ function setLoading(isLoading) {
   elements.applyDsaButton.disabled = isLoading;
   elements.clearButton.disabled = isLoading;
   elements.exportButton.disabled = isLoading;
+  elements.exportDatabaseButton.disabled = isLoading;
   elements.printButton.disabled = isLoading;
   elements.saveCaseButton.disabled = isLoading;
   elements.saveCommentsButton.disabled = isLoading;
@@ -278,9 +301,10 @@ function sanitizeApiBase(value) {
   return String(value || "").trim().replace(/\/+$/, "");
 }
 
-function loadDashboard(rawData, fileName) {
+function loadDashboard(rawData, fileName, options = {}) {
   state.data = normalizeData(rawData);
   state.currentCaseId = null;
+  state.currentDatabaseCaseId = options.databaseCaseId || null;
   state.events = [...state.data.events];
   state.currentRange = null;
   resetDsaSettings({ clean: false });
@@ -291,6 +315,9 @@ function loadDashboard(rawData, fileName) {
   renderPatientSummary();
   renderAll();
   showMessage("");
+  if (!options.skipDatabaseSave) {
+    saveCurrentStateToDatabase(fileName, { silent: true });
+  }
 }
 
 function loadPatientFromMetadata() {
@@ -356,6 +383,9 @@ function normalizeEvent(event) {
   return {
     label: String(event.label || event.type || "evento"),
     time,
+    description: String(event.description || event.descripcion || ""),
+    user: String(event.user || event.usuario || ""),
+    registered_at: event.registered_at || event.timestamp_registro || new Date().toISOString(),
   };
 }
 
@@ -900,6 +930,7 @@ function savePatientData() {
   elements.cleanDsaToggle.checked = true;
   renderPatientSummary();
   renderDsa();
+  if (state.data) saveCurrentStateToDatabase(document.getElementById("fileName").textContent || "caso", { silent: true });
   showMessage("Datos del paciente actualizados. DSA limpio activado para lectura sin superposiciones.");
 }
 
@@ -944,9 +975,12 @@ async function openCase(caseId, options = {}) {
     const record = await response.json();
     if (!response.ok) throw new Error(record.error || "No se pudo abrir el caso.");
     fillCaseForm(record);
-    loadDashboard(record.analysis, record.source_file_name);
+    loadDashboard(record.analysis, record.source_file_name, { skipDatabaseSave: true });
     state.currentCaseId = record.id;
     elements.caseComments.value = record.comments || "";
+    if (options.saveToDatabase) {
+      await saveCurrentStateToDatabase(record.source_file_name, { silent: true });
+    }
     setTimeout(resizeCharts, 150);
     if (!options.silent) showMessage("Caso cargado desde la base local.");
   } catch (error) {
@@ -965,21 +999,25 @@ function fillCaseForm(record) {
   elements.patientCode.value = record.patient_code || "";
   elements.procedureDate.value = record.procedure_date || "";
   elements.hospital.value = record.hospital || "";
+  elements.operatingRoom.value = record.operating_room || "";
   elements.surgeryType.value = record.surgery_type || "";
   elements.anesthesiaType.value = record.anesthesia_type || "";
 }
 
 async function saveCurrentCase() {
-  showMessage(
-    state.currentCaseId
-      ? "El caso actual ya esta guardado. Puedes actualizar comentarios."
-      : "Para guardar un caso nuevo, carga el archivo desde Cargar archivo en la version de escritorio.",
-  );
+  if (!state.data) {
+    showMessage("Primero carga un archivo para guardar el caso.");
+    return;
+  }
+  await saveCurrentStateToDatabase(document.getElementById("fileName").textContent || "caso", { silent: false });
 }
 
 async function saveCaseComments() {
+  if (state.currentDatabaseCaseId && state.data) {
+    await saveCurrentStateToDatabase(document.getElementById("fileName").textContent || "caso", { silent: true });
+  }
   if (!state.currentCaseId) {
-    showMessage("Primero abre o importa un caso guardado.");
+    showMessage(state.currentDatabaseCaseId ? "Comentarios guardados en base de datos local." : "Primero abre o importa un caso guardado.");
     return;
   }
   try {
@@ -996,6 +1034,358 @@ async function saveCaseComments() {
     showMessage(`No se pudieron guardar comentarios. Detalle: ${error.message}`);
   }
 }
+
+function openClinicalDatabase() {
+  return new Promise((resolve, reject) => {
+    if (!("indexedDB" in window)) {
+      reject(new Error("IndexedDB no esta disponible en este navegador."));
+      return;
+    }
+    const request = indexedDB.open(databaseName, databaseVersion);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(databaseStoreName)) {
+        const store = db.createObjectStore(databaseStoreName, { keyPath: "case_id" });
+        store.createIndex("fecha", "metadata.fecha", { unique: false });
+        store.createIndex("institucion", "metadata.institucion", { unique: false });
+        store.createIndex("tipo_cirugia", "metadata.tipo_cirugia", { unique: false });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function databaseTransaction(mode, callback) {
+  const db = await openClinicalDatabase();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(databaseStoreName, mode);
+    const store = tx.objectStore(databaseStoreName);
+    let result;
+    tx.oncomplete = () => {
+      db.close();
+      resolve(result);
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error);
+    };
+    result = callback(store);
+  });
+}
+
+async function saveCaseToDatabase(caseData) {
+  await databaseTransaction("readwrite", (store) => store.put(caseData));
+  state.currentDatabaseCaseId = caseData.case_id;
+  await loadSavedCases();
+  return caseData.case_id;
+}
+
+async function loadSavedCases() {
+  try {
+    const cases = await databaseTransaction("readonly", (store) => {
+      return new Promise((resolve, reject) => {
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result || []);
+        request.onerror = () => reject(request.error);
+      });
+    });
+    state.savedDatabaseCases = cases.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+    renderDatabaseCaseList();
+  } catch (error) {
+    elements.databaseCaseList.textContent = `No se pudo abrir IndexedDB: ${error.message}`;
+  }
+}
+
+async function deleteCase(caseId) {
+  await databaseTransaction("readwrite", (store) => store.delete(caseId));
+  if (state.currentDatabaseCaseId === caseId) state.currentDatabaseCaseId = null;
+  await loadSavedCases();
+}
+
+async function updateCaseMetadata(caseId, metadata) {
+  const record = await getDatabaseCase(caseId);
+  if (!record) throw new Error("Caso no encontrado.");
+  record.metadata = { ...record.metadata, ...metadata };
+  record.updated_at = new Date().toISOString();
+  await saveCaseToDatabase(record);
+}
+
+async function getDatabaseCase(caseId) {
+  return databaseTransaction("readonly", (store) => {
+    return new Promise((resolve, reject) => {
+      const request = store.get(caseId);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  });
+}
+
+async function saveCurrentStateToDatabase(fileName, options = {}) {
+  if (!state.data) return null;
+  const caseData = buildCurrentCaseData(fileName);
+  await saveCaseToDatabase(caseData);
+  if (!options.silent) showMessage(`Caso guardado en base local: ${caseData.case_id}`);
+  return caseData.case_id;
+}
+
+function buildCurrentCaseData(fileName) {
+  const now = new Date();
+  const existingId = state.currentDatabaseCaseId;
+  const caseId = existingId || createCaseId(now);
+  const cleanData = {
+    ...state.data,
+    metadata: {
+      ...state.data.metadata,
+      patient_id: "anonimizado",
+      patient: { ...state.patient },
+      pkpd_model: state.patient.pkpdModel,
+    },
+    events: state.events,
+  };
+  const metadata = {
+    fecha: elements.procedureDate.value || now.toISOString().slice(0, 10),
+    institucion: elements.hospital.value || "",
+    pabellon: elements.operatingRoom.value || "",
+    tipo_cirugia: elements.surgeryType.value || "",
+    tipo_anestesia: elements.anesthesiaType.value || "",
+    observaciones: elements.caseComments.value || "",
+    archivo_origen: fileName || "",
+    duracion_min: getMaxTime(state.data) || 0,
+  };
+  return {
+    case_id: caseId,
+    created_at: existingId ? undefined : now.toISOString(),
+    updated_at: now.toISOString(),
+    metadata,
+    data: cleanData,
+    events: state.events,
+    dsa_settings: state.dsa,
+    aggregated: calculateAggregatedIndicators(cleanData),
+  };
+}
+
+function createCaseId(date = new Date()) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return `CASE_${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}_${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+}
+
+function renderDatabaseCaseList() {
+  const query = (elements.databaseSearch.value || "").toLowerCase().trim();
+  const cases = state.savedDatabaseCases.filter((record) => {
+    const text = [
+      record.case_id,
+      record.metadata?.fecha,
+      record.metadata?.institucion,
+      record.metadata?.tipo_cirugia,
+      record.metadata?.tipo_anestesia,
+    ]
+      .join(" ")
+      .toLowerCase();
+    return !query || text.includes(query);
+  });
+  if (!cases.length) {
+    elements.databaseCaseList.textContent = "Sin casos en base local.";
+    return;
+  }
+  elements.databaseCaseList.innerHTML = "";
+  cases.slice(0, 30).forEach((record) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "case-card";
+    card.innerHTML = `
+      <strong>${escapeHtml(record.case_id)}</strong>
+      <span>${escapeHtml(record.metadata?.fecha || "")}</span><br />
+      <span>${escapeHtml(record.metadata?.institucion || "")} ${escapeHtml(record.metadata?.tipo_cirugia || "")}</span>
+    `;
+    card.addEventListener("click", () => openDatabaseCase(record.case_id));
+    elements.databaseCaseList.appendChild(card);
+  });
+}
+
+async function openDatabaseCase(caseId) {
+  const record = await getDatabaseCase(caseId);
+  if (!record) {
+    showMessage("Caso no encontrado en IndexedDB.");
+    return;
+  }
+  fillDatabaseCaseForm(record);
+  loadDashboard(record.data, record.metadata?.archivo_origen || record.case_id, {
+    skipDatabaseSave: true,
+    databaseCaseId: record.case_id,
+  });
+  state.currentDatabaseCaseId = record.case_id;
+  showMessage(`Caso cargado desde base de datos: ${record.case_id}`);
+}
+
+function fillDatabaseCaseForm(record) {
+  const metadata = record.metadata || {};
+  elements.patientCode.value = "";
+  elements.procedureDate.value = metadata.fecha || "";
+  elements.hospital.value = metadata.institucion || "";
+  elements.operatingRoom.value = metadata.pabellon || "";
+  elements.surgeryType.value = metadata.tipo_cirugia || "";
+  elements.anesthesiaType.value = metadata.tipo_anestesia || "";
+  elements.caseComments.value = metadata.observaciones || "";
+}
+
+async function deleteCurrentDatabaseCase() {
+  if (!state.currentDatabaseCaseId) {
+    showMessage("Primero selecciona un caso de la base de datos.");
+    return;
+  }
+  const id = state.currentDatabaseCaseId;
+  await deleteCase(id);
+  clearDashboard({ silent: true });
+  showMessage(`Caso eliminado: ${id}`);
+}
+
+async function exportCurrentDatabaseCaseToExcel() {
+  if (!state.currentDatabaseCaseId) {
+    showMessage("Primero selecciona o guarda un caso.");
+    return;
+  }
+  const record = await getDatabaseCase(state.currentDatabaseCaseId);
+  if (!record) {
+    showMessage("Caso no encontrado para exportar.");
+    return;
+  }
+  exportCasesToExcel([record], `eeg_case_${record.case_id}.xlsx`);
+}
+
+async function exportDatabaseToExcel() {
+  await loadSavedCases();
+  if (!state.savedDatabaseCases.length) {
+    showMessage("No hay casos guardados para exportar.");
+    return;
+  }
+  exportCasesToExcel(state.savedDatabaseCases, "eeg_base_datos_casos.xlsx");
+}
+
+function exportCasesToExcel(cases, filename) {
+  const sheets = {
+    Resumen_Casos: buildResumenCasosSheet(cases),
+    Series_Temporales: cases.flatMap(flattenTimeSeriesForExcel),
+    Eventos_Clinicos: cases.flatMap(flattenEventsForExcel),
+    DSA_Matriz: cases.flatMap(flattenDSAForExcel),
+    Indicadores_Agregados: cases.map((record) => ({ case_id: record.case_id, ...calculateAggregatedIndicators(record.data) })),
+  };
+  const blob = createXlsxWorkbook(sheets);
+  downloadBlob(blob, filename);
+  showMessage(`Excel exportado: ${filename}`);
+}
+
+function buildResumenCasosSheet(cases) {
+  return cases.map((record) => {
+    const data = record.data || {};
+    const indices = data.indices || {};
+    const aggregated = calculateAggregatedIndicators(data);
+    return {
+      case_id: record.case_id,
+      fecha: record.metadata?.fecha || "",
+      institucion: record.metadata?.institucion || "",
+      pabellon: record.metadata?.pabellon || "",
+      tipo_cirugia: record.metadata?.tipo_cirugia || "",
+      tipo_anestesia: record.metadata?.tipo_anestesia || "",
+      duracion_min: record.metadata?.duracion_min || getMaxTime(data),
+      qCON_promedio: average(indices.qCON),
+      qCON_min: minValue(indices.qCON),
+      qCON_max: maxValue(indices.qCON),
+      qNOX_promedio: average(indices.qNOX),
+      BSR_max: maxValue(indices.BSR),
+      EMG_promedio: average(indices.EMG),
+      SQI_promedio: average(indices.SQI),
+      banda_predominante_global: aggregated.banda_predominante_global,
+      eventos_relevantes: (record.events || []).map((event) => event.label).join("; "),
+      observaciones: record.metadata?.observaciones || "",
+    };
+  });
+}
+
+function flattenTimeSeriesForExcel(record) {
+  const data = record.data || {};
+  const indices = data.indices || {};
+  const times = indices.time?.length ? indices.time : data.time || [];
+  const bandSeries = computeBandPowerForData(data);
+  return times.map((time, index) => {
+    const bands = bandValuesAt(bandSeries, index);
+    const predominant = predominantBand(bands);
+    const sqi = valueAt(indices.SQI, index);
+    const emg = valueAt(indices.EMG, index);
+    return {
+      case_id: record.case_id,
+      tiempo_seg: minutesToSeconds(time),
+      qCON: valueAt(indices.qCON, index),
+      qNOX: valueAt(indices.qNOX, index),
+      BSR: valueAt(indices.BSR, index),
+      EMG: emg,
+      SQI: sqi,
+      delta_power: bands.Delta,
+      theta_power: bands.Theta,
+      alpha_power: bands.Alpha,
+      beta_power: bands.Beta,
+      gamma_power: bands.Gamma,
+      banda_predominante: predominant,
+      calidad_senal: sqi == null ? "" : sqi >= 70 ? "adecuada" : "baja",
+      artefacto_probable: emg != null && emg > 45 ? "si" : "no",
+    };
+  });
+}
+
+function flattenEventsForExcel(record) {
+  return (record.events || []).map((event) => ({
+    case_id: record.case_id,
+    tiempo_seg: minutesToSeconds(event.time),
+    evento: event.label || "",
+    descripcion: event.description || "",
+    usuario: event.user || "operador",
+    timestamp_registro: event.registered_at || "",
+  }));
+}
+
+function flattenDSAForExcel(record) {
+  const data = record.data || {};
+  const dsa = data.dsa || {};
+  const frequencies = dsa.frequencies || [];
+  const times = dsa.times || [];
+  const matrix = transposeIfNeeded(dsa.power || [], frequencies.length);
+  const rows = [];
+  frequencies.forEach((frequency, frequencyIndex) => {
+    times.forEach((time, timeIndex) => {
+      rows.push({
+        case_id: record.case_id,
+        tiempo_seg: minutesToSeconds(time),
+        frecuencia_hz: frequency,
+        potencia: matrix[frequencyIndex]?.[timeIndex] ?? null,
+        banda_eeg: eegBandForFrequency(frequency),
+      });
+    });
+  });
+  return rows;
+}
+
+function calculateAggregatedIndicators(caseData) {
+  const indices = caseData.indices || {};
+  const bandSeries = computeBandPowerForData(caseData);
+  const predominant = (indices.time || caseData.time || []).map((_, index) => predominantBand(bandValuesAt(bandSeries, index)));
+  const total = Math.max(predominant.filter(Boolean).length, 1);
+  const percent = (band) => (predominant.filter((value) => value === band).length / total) * 100;
+  return {
+    porcentaje_tiempo_delta: percent("Delta"),
+    porcentaje_tiempo_theta: percent("Theta"),
+    porcentaje_tiempo_alpha: percent("Alpha"),
+    porcentaje_tiempo_beta: percent("Beta"),
+    porcentaje_tiempo_gamma: percent("Gamma"),
+    tiempo_qCON_menor_40: countWhere(indices.qCON, (value) => value < 40),
+    tiempo_qCON_40_60: countWhere(indices.qCON, (value) => value >= 40 && value <= 60),
+    tiempo_qCON_mayor_60: countWhere(indices.qCON, (value) => value > 60),
+    tiempo_BSR_mayor_0: countWhere(indices.BSR, (value) => value > 0),
+    tiempo_EMG_alto: countWhere(indices.EMG, (value) => value > 45),
+    tiempo_SQI_bajo: countWhere(indices.SQI, (value) => value < 70),
+    banda_predominante_global: mode(predominant.filter(Boolean)) || "",
+  };
+}
+
 
 function renderPatientSummary() {
   const parts = [];
@@ -1086,9 +1476,17 @@ function collectSegments(x, y, predicate) {
 function addManualEvent() {
   const time = Number(elements.eventTime.value);
   if (!Number.isFinite(time)) return;
-  state.events.push({ label: elements.eventType.value, time });
+  state.events.push({
+    label: elements.eventType.value,
+    time,
+    description: elements.eventDescription.value,
+    user: "operador",
+    registered_at: new Date().toISOString(),
+  });
+  elements.eventDescription.value = "";
   elements.eventTime.value = "";
   renderAll();
+  if (state.data) saveCurrentStateToDatabase(document.getElementById("fileName").textContent || "caso", { silent: true });
 }
 
 function applyManualRange() {
@@ -1112,11 +1510,13 @@ function clearDashboard(options = {}) {
   state.events = [];
   state.currentRange = null;
   state.currentCaseId = null;
+  state.currentDatabaseCaseId = null;
   state.patient = { age: "", gender: "", height: "", weight: "", pkpdModel: "" };
   resetDsaSettings({ clean: true });
   elements.patientCode.value = "";
   elements.procedureDate.value = "";
   elements.hospital.value = "";
+  elements.operatingRoom.value = "";
   elements.surgeryType.value = "";
   elements.anesthesiaType.value = "";
   elements.caseComments.value = "";
@@ -1126,6 +1526,7 @@ function clearDashboard(options = {}) {
   elements.patientWeight.value = "";
   elements.pkpdModel.value = "";
   elements.fileInput.value = "";
+  elements.eventDescription.value = "";
   updateFileName("Sin archivo");
   ["duration", "startTime", "endTime", "samplingRate", "device"].forEach((id) => {
     document.getElementById(id).textContent = "--";
@@ -1139,6 +1540,92 @@ function clearDashboard(options = {}) {
   elements.legendSummary.textContent = "Sin eventos relevantes.";
   renderPatientSummary();
   if (!options.silent) showMessage("Datos limpiados. El DSA quedo sin imagen ni informacion en pantalla.");
+}
+
+function computeBandPowerForData(data) {
+  const dsa = data?.dsa || {};
+  const frequencies = dsa.frequencies || [];
+  const matrix = transposeIfNeeded(dsa.power || [], frequencies.length);
+  const bands = {
+    Delta: [0.5, 4],
+    Theta: [4, 8],
+    Alpha: [8, 13],
+    Beta: [13, 30],
+    Gamma: [30, Infinity],
+  };
+  return Object.fromEntries(
+    Object.entries(bands).map(([name, [low, high]]) => {
+      const frequencyIndexes = frequencies
+        .map((frequency, index) => (frequency >= low && frequency < high ? index : -1))
+        .filter((index) => index >= 0);
+      const values = (dsa.times || []).map((_, timeIndex) => {
+        const total = frequencyIndexes.reduce((sum, frequencyIndex) => sum + (matrix[frequencyIndex]?.[timeIndex] || 0), 0);
+        return frequencyIndexes.length ? total / frequencyIndexes.length : 0;
+      });
+      return [name, values];
+    }),
+  );
+}
+
+function bandValuesAt(series, index) {
+  return {
+    Delta: valueAt(series.Delta, index) || 0,
+    Theta: valueAt(series.Theta, index) || 0,
+    Alpha: valueAt(series.Alpha, index) || 0,
+    Beta: valueAt(series.Beta, index) || 0,
+    Gamma: valueAt(series.Gamma, index) || 0,
+  };
+}
+
+function predominantBand(values) {
+  return Object.entries(values).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+}
+
+function eegBandForFrequency(frequency) {
+  if (frequency < 4) return "Delta";
+  if (frequency < 8) return "Theta";
+  if (frequency < 13) return "Alpha";
+  if (frequency < 30) return "Beta";
+  return "Gamma";
+}
+
+function minutesToSeconds(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number * 60 : "";
+}
+
+function valueAt(values, index) {
+  const value = values?.[index];
+  return Number.isFinite(value) ? value : null;
+}
+
+function numberValues(values = []) {
+  return values.filter((value) => Number.isFinite(value));
+}
+
+function average(values = []) {
+  const clean = numberValues(values);
+  return clean.length ? clean.reduce((sum, value) => sum + value, 0) / clean.length : "";
+}
+
+function minValue(values = []) {
+  const clean = numberValues(values);
+  return clean.length ? Math.min(...clean) : "";
+}
+
+function maxValue(values = []) {
+  const clean = numberValues(values);
+  return clean.length ? Math.max(...clean) : "";
+}
+
+function countWhere(values = [], predicate) {
+  return numberValues(values).filter(predicate).length;
+}
+
+function mode(values) {
+  const counts = new Map();
+  values.forEach((value) => counts.set(value, (counts.get(value) || 0) + 1));
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "";
 }
 
 async function exportDashboardData() {
@@ -1184,6 +1671,140 @@ async function exportDashboardData() {
     URL.revokeObjectURL(url);
   }, 1000);
   showMessage("Exportacion iniciada. Revisa la carpeta de descargas.");
+}
+
+function createXlsxWorkbook(sheets) {
+  const sheetNames = Object.keys(sheets);
+  const files = {
+    "[Content_Types].xml": contentTypesXml(sheetNames),
+    "_rels/.rels": rootRelsXml(),
+    "xl/workbook.xml": workbookXml(sheetNames),
+    "xl/_rels/workbook.xml.rels": workbookRelsXml(sheetNames),
+    "xl/styles.xml": stylesXml(),
+  };
+  sheetNames.forEach((name, index) => {
+    files[`xl/worksheets/sheet${index + 1}.xml`] = worksheetXml(sheets[name]);
+  });
+  return new Blob([zipFiles(files)], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+}
+
+function worksheetXml(rows) {
+  const headers = rows.length ? Object.keys(rows[0]) : ["sin_datos"];
+  const headerRow = `<row r="1">${headers.map((header, index) => cellXml(1, index + 1, header, true)).join("")}</row>`;
+  const dataRows = rows.map((row, rowIndex) => {
+    const r = rowIndex + 2;
+    return `<row r="${r}">${headers.map((header, index) => cellXml(r, index + 1, row[header])).join("")}</row>`;
+  });
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetData>${headerRow}${dataRows.join("")}</sheetData></worksheet>`;
+}
+
+function cellXml(row, column, value, header = false) {
+  const ref = `${columnName(column)}${row}`;
+  const style = header ? ' s="1"' : "";
+  if (value == null || value === "") return `<c r="${ref}"${style}/>`;
+  if (typeof value === "number" && Number.isFinite(value)) return `<c r="${ref}"><v>${value}</v></c>`;
+  return `<c r="${ref}" t="inlineStr"${style}><is><t>${escapeXml(String(value))}</t></is></c>`;
+}
+
+function columnName(index) {
+  let name = "";
+  while (index > 0) {
+    const rem = (index - 1) % 26;
+    name = String.fromCharCode(65 + rem) + name;
+    index = Math.floor((index - 1) / 26);
+  }
+  return name;
+}
+
+function contentTypesXml(sheetNames) {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheetNames.map((_, index) => `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("")}</Types>`;
+}
+
+function rootRelsXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`;
+}
+
+function workbookXml(sheetNames) {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheetNames.map((name, index) => `<sheet name="${escapeXml(name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`).join("")}</sheets></workbook>`;
+}
+
+function workbookRelsXml(sheetNames) {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheetNames.map((_, index) => `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`).join("")}<Relationship Id="rId${sheetNames.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`;
+}
+
+function stylesXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font/><font><b/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="2"><xf/><xf fontId="1" applyFont="1"/></cellXfs></styleSheet>`;
+}
+
+function zipFiles(files) {
+  const encoder = new TextEncoder();
+  const chunks = [];
+  const central = [];
+  let offset = 0;
+  Object.entries(files).forEach(([name, content]) => {
+    const nameBytes = encoder.encode(name);
+    const data = encoder.encode(content);
+    const crc = crc32(data);
+    const local = zipHeader(0x04034b50, [[2, 20], [2, 0], [2, 0], [2, 0], [2, 0], [4, crc], [4, data.length], [4, data.length], [2, nameBytes.length], [2, 0]]);
+    chunks.push(local, nameBytes, data);
+    central.push({ nameBytes, crc, size: data.length, offset });
+    offset += local.length + nameBytes.length + data.length;
+  });
+  const centralStart = offset;
+  central.forEach((entry) => {
+    const header = zipHeader(0x02014b50, [[2, 20], [2, 20], [2, 0], [2, 0], [2, 0], [2, 0], [4, entry.crc], [4, entry.size], [4, entry.size], [2, entry.nameBytes.length], [2, 0], [2, 0], [2, 0], [2, 0], [4, 0], [4, entry.offset]]);
+    chunks.push(header, entry.nameBytes);
+    offset += header.length + entry.nameBytes.length;
+  });
+  const centralSize = offset - centralStart;
+  chunks.push(zipHeader(0x06054b50, [[2, 0], [2, 0], [2, central.length], [2, central.length], [4, centralSize], [4, centralStart], [2, 0]]));
+  return new Blob(chunks);
+}
+
+function zipHeader(signature, fields) {
+  const length = 4 + fields.reduce((sum, [size]) => sum + size, 0);
+  const buffer = new ArrayBuffer(length);
+  const view = new DataView(buffer);
+  view.setUint32(0, signature, true);
+  let offset = 4;
+  fields.forEach(([size, value]) => {
+    if (size === 2) view.setUint16(offset, value, true);
+    if (size === 4) view.setUint32(offset, value >>> 0, true);
+    offset += size;
+  });
+  return new Uint8Array(buffer);
+}
+
+function crc32(bytes) {
+  let crc = -1;
+  for (let index = 0; index < bytes.length; index += 1) crc = (crc >>> 8) ^ crcTable[(crc ^ bytes[index]) & 0xff];
+  return (crc ^ -1) >>> 0;
+}
+
+const crcTable = Array.from({ length: 256 }, (_, index) => {
+  let value = index;
+  for (let bit = 0; bit < 8; bit += 1) value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+  return value >>> 0;
+});
+
+function escapeXml(value) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.style.display = "none";
+  document.body.appendChild(link);
+  link.click();
+  setTimeout(() => {
+    link.remove();
+    URL.revokeObjectURL(url);
+  }, 1000);
 }
 
 function printDashboard() {

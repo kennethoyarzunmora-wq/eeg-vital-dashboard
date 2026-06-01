@@ -21,6 +21,7 @@
         <button id="resetZoomButton" type="button">Reset zoom</button>
         <button id="clearButton" type="button">Limpiar datos</button>
         <button id="exportButton" type="button">Exportar datos</button>
+        <button id="exportDatabaseButton" type="button">Exportar base de datos a Excel</button>
         <button id="printButton" type="button">Imprimir</button>
       </div>
     </header>
@@ -121,6 +122,7 @@
       <aside class="side-panel">
         <section>
           <h2>Paciente y modelo</h2>
+          <p class="privacy-warning">No ingresar datos identificables del paciente.</p>
           <div class="patient-form">
             <label>
               Codigo paciente
@@ -133,6 +135,10 @@
             <label>
               Hospital/clinica
               <input id="hospital" type="text" placeholder="centro" />
+            </label>
+            <label>
+              Pabellon
+              <input id="operatingRoom" type="text" placeholder="sala" />
             </label>
             <label>
               Cirugia
@@ -186,6 +192,18 @@
         </section>
 
         <section>
+          <h2>Base de datos de casos</h2>
+          <div class="database-tools">
+            <input id="databaseSearch" type="search" placeholder="buscar fecha, institucion o cirugia" />
+            <button id="refreshDatabaseButton" type="button">Actualizar</button>
+            <button id="exportAllCasesButton" type="button">Exportar todos</button>
+            <button id="exportOneCaseButton" type="button">Exportar caso actual</button>
+            <button id="deleteDatabaseCaseButton" type="button">Eliminar caso actual</button>
+          </div>
+          <div id="databaseCaseList" class="case-list">Sin casos en base local.</div>
+        </section>
+
+        <section>
           <h2>Casos guardados</h2>
           <button id="refreshCasesButton" type="button">Actualizar lista</button>
           <div id="caseList" class="case-list">Sin casos guardados.</div>
@@ -206,7 +224,9 @@
               <option>mantenimiento</option>
               <option>despertar</option>
               <option>extubacion</option>
+              <option>otro</option>
             </select>
+            <input id="eventDescription" type="text" placeholder="descripcion" />
             <input id="eventTime" type="number" min="0" step="0.5" placeholder="min" />
             <button id="addEventButton" type="button">Agregar</button>
           </div>
