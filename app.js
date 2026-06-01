@@ -35,12 +35,12 @@ const colors = {
 
 const clinicalSignals = ["qCON", "qNOX", "BSR", "EMG", "SQI"];
 const clinicalDomains = {
-  dsa: [0.525, 1],
-  qCON: [0.42, 0.52],
-  qNOX: [0.315, 0.415],
-  BSR: [0.21, 0.31],
-  EMG: [0.105, 0.205],
-  SQI: [0, 0.1],
+  dsa: [0.57, 1],
+  qCON: [0.462, 0.552],
+  qNOX: [0.348, 0.438],
+  BSR: [0.234, 0.324],
+  EMG: [0.12, 0.21],
+  SQI: [0.006, 0.096],
 };
 
 const dsaColorScale = [
@@ -630,18 +630,27 @@ function clinicalMonitorLayout(extra = {}) {
   };
   const clinicalYAxis = (title, domain, color) => ({
     domain,
-    title: { text: title, standoff: 4, font: { size: 11, color } },
+    title: { text: title, standoff: 6, font: { size: 11, color } },
     gridcolor: "#132033",
-    zerolinecolor: "#253246",
-    tickfont: { size: 9 },
-    range: [0, 100],
+    zeroline: true,
+    zerolinecolor: "#edf4ff",
+    zerolinewidth: 1.5,
+    tickmode: "array",
+    tickvals: [0, 50, 100],
+    ticktext: ["0", "50", "100"],
+    tickfont: { size: 8, color: "#d8e2f0" },
+    ticks: "outside",
+    ticklen: 3,
+    tickpadding: 2,
+    automargin: true,
+    range: [-4, 104],
     fixedrange: false,
   });
 
   return {
     paper_bgcolor: "rgba(0,0,0,0)",
     plot_bgcolor: "#050b14",
-    margin: { l: 46, r: 44, t: 2, b: 24 },
+    margin: { l: 58, r: 44, t: 2, b: 26 },
     font: { color: "#edf4ff", size: 10 },
     hoverlabel: {
       bgcolor: "#ffffff",
