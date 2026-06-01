@@ -6,7 +6,7 @@ const state = {
   events: [],
   currentRange: null,
   dsa: {
-    palette: "conoxLite",
+    palette: "thermal",
     min: 0.62,
     max: 0.85,
     clean: false,
@@ -283,6 +283,7 @@ function loadDashboard(rawData, fileName) {
   state.currentCaseId = null;
   state.events = [...state.data.events];
   state.currentRange = null;
+  resetDsaSettings({ clean: false });
   loadPatientFromMetadata();
   updateFileName(fileName);
   updateSummary();
@@ -870,6 +871,19 @@ function applyDsaSettings() {
   renderDsa();
 }
 
+function resetDsaSettings(options = {}) {
+  state.dsa = {
+    palette: "thermal",
+    min: 0.62,
+    max: 0.85,
+    clean: Boolean(options.clean),
+  };
+  elements.paletteSelect.value = state.dsa.palette;
+  elements.powerMin.value = state.dsa.min;
+  elements.powerMax.value = state.dsa.max;
+  elements.cleanDsaToggle.checked = state.dsa.clean;
+}
+
 function savePatientData() {
   state.patient = {
     age: elements.patientAge.value,
@@ -1099,7 +1113,7 @@ function clearDashboard(options = {}) {
   state.currentRange = null;
   state.currentCaseId = null;
   state.patient = { age: "", gender: "", height: "", weight: "", pkpdModel: "" };
-  state.dsa = { palette: "conoxLite", min: 0.62, max: 0.85, clean: true };
+  resetDsaSettings({ clean: true });
   elements.patientCode.value = "";
   elements.procedureDate.value = "";
   elements.hospital.value = "";
@@ -1112,10 +1126,6 @@ function clearDashboard(options = {}) {
   elements.patientWeight.value = "";
   elements.pkpdModel.value = "";
   elements.fileInput.value = "";
-  elements.paletteSelect.value = "conoxLite";
-  elements.powerMin.value = 0.62;
-  elements.powerMax.value = 0.85;
-  elements.cleanDsaToggle.checked = true;
   updateFileName("Sin archivo");
   ["duration", "startTime", "endTime", "samplingRate", "device"].forEach((id) => {
     document.getElementById(id).textContent = "--";
