@@ -16,6 +16,7 @@ from pathlib import Path
 from traceback import format_exc
 
 from flask import Flask, jsonify, request, send_from_directory
+from werkzeug.exceptions import HTTPException
 import pandas as pd
 
 from local_store import LocalStore
@@ -43,7 +44,7 @@ store = LocalStore()
 def add_cors_headers(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
     response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -205,6 +206,8 @@ def csv_to_payload(path: Path):
 
 @app.errorhandler(Exception)
 def handle_error(error):
+    if isinstance(error, HTTPException):
+        return jsonify({"error": error.description}), error.code
     logging.error("Unhandled error: %s\n%s", error, format_exc())
     return jsonify({"error": str(error), "log": str(LOG_PATH)}), 500
 

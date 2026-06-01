@@ -4,6 +4,7 @@ logs/
 build/
 dist/
 installer/
+.installer_build/
 installer_build/
 installer_package/
 *.spec

@@ -131,6 +131,13 @@ const elements = {
 };
 
 document.addEventListener("DOMContentLoaded", () => {
+  window.addEventListener("error", (event) => {
+    showMessage(`Error de visualizacion: ${event.message}`);
+  });
+  window.addEventListener("unhandledrejection", (event) => {
+    showMessage(`Error de proceso: ${event.reason?.message || event.reason || "desconocido"}`);
+  });
+
   elements.fileInput.addEventListener("change", handleFileUpload);
   elements.resetZoomButton.addEventListener("click", resetZoom);
   elements.clearButton.addEventListener("click", clearDashboard);
@@ -236,9 +243,7 @@ async function importAndSaveCase(file) {
     });
     const record = await response.json();
     if (!response.ok) throw new Error(record.error || "No se pudo importar el caso.");
-    elements.caseComments.value = record.comments || "";
-    loadDashboard(record.analysis, record.source_file_name || file.name);
-    state.currentCaseId = record.id;
+    await openCase(record.id, { silent: true });
     await loadCaseList();
     showMessage("Caso importado, analizado y guardado localmente.");
   } catch (error) {
@@ -420,12 +425,17 @@ function getMaxTime(data) {
 }
 
 function renderAll() {
-  renderDsa();
-  renderBands();
-  renderIndices();
-  renderEvents();
-  renderAnalysis();
-  renderLegendSummary();
+  try {
+    renderDsa();
+    renderBands();
+    renderIndices();
+    renderEvents();
+    renderAnalysis();
+    renderLegendSummary();
+    requestAnimationFrame(resizeCharts);
+  } catch (error) {
+    showMessage(`No se pudo dibujar el dashboard: ${error.message}`);
+  }
 }
 
 function renderDsa() {
@@ -930,7 +940,7 @@ function renderCaseList(cases) {
   });
 }
 
-async function openCase(caseId) {
+async function openCase(caseId, options = {}) {
   try {
     const response = await fetch(`${getApiBase()}/api/cases/${caseId}`);
     const record = await response.json();
@@ -939,10 +949,18 @@ async function openCase(caseId) {
     loadDashboard(record.analysis, record.source_file_name);
     state.currentCaseId = record.id;
     elements.caseComments.value = record.comments || "";
-    showMessage("Caso cargado desde la base local.");
+    setTimeout(resizeCharts, 150);
+    if (!options.silent) showMessage("Caso cargado desde la base local.");
   } catch (error) {
     showMessage(`No se pudo abrir el caso. Detalle: ${error.message}`);
   }
+}
+
+function resizeCharts() {
+  ["dsaChart", "bandsChart", "indicesChart"].forEach((id) => {
+    const chart = document.getElementById(id);
+    if (chart?._fullLayout) Plotly.Plots.resize(chart);
+  });
 }
 
 function fillCaseForm(record) {
